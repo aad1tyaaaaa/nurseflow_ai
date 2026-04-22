@@ -1,0 +1,167 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* === Brand Core === */
+  --color-primary: #FFB4B4;
+  --color-primary-deep: #F28B82;
+  --color-secondary: #AEDFF7;
+  --color-secondary-deep: #7BC5E7;
+  --color-accent: #C7B8EA;
+  --color-accent-deep: #A792DF;
+
+  /* === Surfaces & Backgrounds === */
+  --color-bg: #FFF8F6;
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #FFF0EE;
+  --color-overlay: rgba(255, 248, 246, 0.72);
+
+  /* === Semantic / Clinical Safety === */
+  --color-success: #B8E8D4;
+  --color-success-deep: #5FB49C;
+  --color-warning: #FFE4A0;
+  --color-warning-deep: #E5B238;
+  --color-critical: #F28B82;
+  --color-critical-glow: rgba(242, 139, 130, 0.35);
+
+  /* === Text === */
+  --color-text-primary: #2D2D2D;
+  --color-text-secondary: #7A7A8C;
+  --color-text-inverse: #FFFFFF;
+  --color-text-muted: #B0AEBA;
+
+  /* === Borders & Dividers === */
+  --color-border: rgba(255, 180, 180, 0.25);
+  --color-border-strong: rgba(255, 180, 180, 0.55);
+
+  /* === Typography === */
+  --font-display: "Plus Jakarta Sans", sans-serif;
+  --font-body: "DM Sans", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* === Radius === */
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+
+  /* === Ease & Motion === */
+  --duration-base: 200ms;
+  --duration-slow: 600ms;
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root {
+  --background: var(--color-bg);
+  --foreground: var(--color-text-primary);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+}
+
+/* === Custom Components === */
+@layer components {
+  .clay-card {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    box-shadow: 
+      0 2px 8px rgba(255, 180, 180, 0.08),
+      0 8px 32px rgba(0, 0, 0, 0.04);
+    transition: transform var(--duration-base) var(--ease-spring), box-shadow var(--duration-base) var(--ease-spring);
+  }
+
+  .clay-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+      0 4px 16px rgba(255, 180, 180, 0.15),
+      0 16px 48px rgba(0, 0, 0, 0.06);
+  }
+
+  .clay-card-critical {
+    border-color: var(--color-critical);
+    box-shadow: 
+      0 0 0 3px var(--color-critical-glow),
+      0 8px 32px rgba(242, 139, 130, 0.15);
+    animation: criticalPulse 2.5s ease-in-out infinite;
+  }
+
+  .glass-nav {
+    background-color: var(--color-overlay);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .bento-grid {
+    display: grid;
+    gap: var(--space-6);
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+
+  /* Legacy bento CSS removed handling gradients in React */
+  @media (min-width: 768px) {
+    .bento-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .bento-grid {
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+    }
+  }
+
+  .btn-primary {
+    border-radius: var(--radius-md);
+    background-color: var(--color-primary);
+    color: var(--color-text-primary);
+    font-weight: 700;
+    font-size: 0.875rem;
+    height: 3rem;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+    box-shadow: 0 10px 15px -3px rgba(255, 180, 180, 0.2);
+    transition-property: all;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 25px -5px rgba(255, 180, 180, 0.3);
+  }
+}
+
+/* === Animations === */
+@keyframes criticalPulse {
+  0%, 100% { box-shadow: 0 0 0 3px var(--color-critical-glow); }
+  50% { box-shadow: 0 0 0 8px rgba(242, 139, 130, 0.12); }
+}
+
+@keyframes staggerUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-stagger-up {
+  animation: staggerUp var(--duration-slow) var(--ease-smooth) both;
+}
+
+
