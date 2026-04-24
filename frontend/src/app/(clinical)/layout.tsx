@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { VoiceNavigator } from "@/components/ui/VoiceNavigator";
 import { useAuth } from "@/context/AuthContext";
 
 export default function ClinicalLayout({
@@ -52,6 +53,7 @@ export default function ClinicalLayout({
           </main>
         </div>
       )}
+      <VoiceNavigator />
     </div>
   );
 }

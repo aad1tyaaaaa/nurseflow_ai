@@ -122,17 +122,23 @@ class FallRiskService:
             factors["acuity"] = min(patient.acuity_score * 2, 15.0)
             score += factors["acuity"]
 
-        # Mobility event (from camera CV)
+        # Mobility event (from camera CV) — weighted by detector confidence
         if mobility_event:
             event_type = mobility_event.get("event_type", "")
-            if event_type == "bed_exit_attempt":
-                factors["mobility_event"] = 30.0
-            elif event_type == "unsteady_gait":
-                factors["mobility_event"] = 25.0
-            elif event_type == "repositioning":
-                factors["mobility_event"] = 10.0
-            else:
-                factors["mobility_event"] = 15.0
+            confidence = float(mobility_event.get("confidence") or 1.0)
+            # Base weight by event severity
+            base_weight = {
+                "bed_exit_attempt": 30.0,
+                "unstable_standing": 28.0,
+                "unsteady_gait": 25.0,
+                "standing_unassisted": 20.0,
+                "standing": 12.0,
+                "sitting": 6.0,
+                "repositioning": 10.0,
+                "lying": 0.0,
+            }.get(event_type, 15.0)
+            # Scale by confidence so low-confidence detections contribute less
+            factors["mobility_event"] = round(base_weight * max(0.0, min(1.0, confidence)), 2)
             score += factors["mobility_event"]
 
         # Previous fall history (placeholder for EHR integration)

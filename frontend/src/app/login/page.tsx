@@ -16,12 +16,19 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [oauthMessage, setOauthMessage] = useState<string | null>(null);
   const router = useRouter();
   const { login, register } = useAuth();
+
+  const handleSocialClick = (provider: "Apple" | "Google") => {
+    setActiveTab("login");
+    setOauthMessage(`${provider} SSO is not configured in this environment yet. Please continue with secure email sign-in below.`);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    setOauthMessage(null);
     setSubmitting(true);
     try {
       if (activeTab === "signup") {
@@ -164,6 +171,7 @@ export default function LoginPage() {
               <div className="grid grid-cols-2 gap-4 mt-8">
                 <button 
                   type="button"
+                  onClick={() => handleSocialClick("Apple")}
                   className="flex items-center justify-center gap-2 py-3.5 rounded-full border border-border/80 hover:bg-white/60 transition-all text-[13px] font-medium text-text-primary bg-white/30 backdrop-blur-sm"
                 >
                   <svg viewBox="0 0 384 512" width="16" height="16" fill="currentColor">
@@ -173,12 +181,19 @@ export default function LoginPage() {
                 </button>
                 <button 
                   type="button"
+                  onClick={() => handleSocialClick("Google")}
                   className="flex items-center justify-center gap-2 py-3.5 rounded-full border border-border/80 hover:bg-white/60 transition-all text-[13px] font-medium text-text-primary bg-white/30 backdrop-blur-sm"
                 >
                   <Image src="https://www.gstatic.com/images/branding/product/1x/gsa_512dp.png" alt="Google" width={16} height={16} />
                   Google
                 </button>
               </div>
+
+              {oauthMessage && (
+                <p className="mt-4 text-center text-xs text-text-secondary bg-white/50 border border-border/60 rounded-2xl px-4 py-3">
+                  {oauthMessage}
+                </p>
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -194,7 +209,7 @@ export default function LoginPage() {
               {activeTab === "signup" ? "Sign in" : "Sign up"}
             </button>
           </p>
-          <Link href="#" className="underline font-medium underline-offset-[3px] decoration-border hover:text-text-primary hover:decoration-text-primary transition-all pb-0.5">
+          <Link href="/terms" className="underline font-medium underline-offset-[3px] decoration-border hover:text-text-primary hover:decoration-text-primary transition-all pb-0.5">
             Terms & Conditions
           </Link>
         </div>

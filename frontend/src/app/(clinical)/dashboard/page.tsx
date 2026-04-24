@@ -16,6 +16,7 @@ import Link from "next/link";
 
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { AIInsightPanel } from "@/components/ui/AIInsightPanel";
+import { NurseDiary } from "@/components/ui/NurseDiary";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 
@@ -277,6 +278,13 @@ const DashboardPage = () => {
                 <p className="text-sm text-text-muted italic">No active alerts</p>
               )}
             </div>
+          </Card>
+        </BentoGridItem>
+
+        {/* 6. Nurse's Diary */}
+        <BentoGridItem span={12}>
+          <Card className="h-full">
+            <NurseDiary />
           </Card>
         </BentoGridItem>
       </BentoGrid>

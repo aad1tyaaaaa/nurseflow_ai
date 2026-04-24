@@ -9,7 +9,11 @@ from app.database import get_db
 from app.api.deps import get_current_user, require_permission
 from app.models.user import User
 from app.models.fall_risk import FallRiskAssessment
-from app.schemas.fall_risk import FallRiskAssessmentCreate, FallRiskAssessmentResponse
+from app.schemas.fall_risk import (
+    FallRiskAssessmentCreate,
+    FallRiskAssessmentResponse,
+    MobilityEventRequest,
+)
 from app.services.fall_risk_service import FallRiskService
 
 router = APIRouter(prefix="/fall-risk", tags=["Fall Risk Monitoring"])
@@ -54,24 +58,48 @@ async def get_patient_assessments(
 
 @router.post("/mobility-event", response_model=FallRiskAssessmentResponse)
 async def report_mobility_event(
-    patient_id: uuid.UUID,
-    event_type: str,
-    confidence: float = 0.0,
+    event: MobilityEventRequest,
     current_user: User = Depends(require_permission("fall_risk:create")),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Report a camera-detected mobility event (from edge CV module).
-    Event types: bed_exit_attempt, unsteady_gait, repositioning, standing_unassisted.
-    Triggers immediate fall-risk re-assessment.
+    Ingest a structured mobility event from the Computer Vision module.
+
+    The CV pipeline (camera + pose estimation) classifies patient posture into
+    states such as lying, sitting, standing, unstable_standing, bed_exit_attempt,
+    unsteady_gait, or repositioning, and posts the event here.
+
+    The Fall Risk Engine re-scores the patient in real time and may raise an
+    alert when the composite score crosses the HIGH threshold.
     """
     mobility_event = {
-        "event_type": event_type,
-        "confidence": confidence,
-        "source": "camera_cv",
+        "event_type": event.event_type,
+        "confidence": event.confidence,
+        "timestamp": event.timestamp.isoformat() if event.timestamp else None,
+        "source": event.source,
     }
     try:
-        assessment = await FallRiskService.assess_patient(db, patient_id, mobility_event)
+        assessment = await FallRiskService.assess_patient(db, event.patient_id, mobility_event)
         return assessment
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/mobility-events/{patient_id}", response_model=list[FallRiskAssessmentResponse])
+async def get_mobility_events(
+    patient_id: uuid.UUID,
+    limit: int = Query(default=20, le=100),
+    current_user: User = Depends(require_permission("fall_risk:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return recent CV-detected mobility events for a patient."""
+    result = await db.execute(
+        select(FallRiskAssessment)
+        .where(
+            FallRiskAssessment.patient_id == patient_id,
+            FallRiskAssessment.mobility_event_detected.is_(True),
+        )
+        .order_by(FallRiskAssessment.assessed_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())

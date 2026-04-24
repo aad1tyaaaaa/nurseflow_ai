@@ -1,8 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Sparkles, ArrowRight } from "lucide-react";
+import { Sparkles, ArrowRight, ChevronUp } from "lucide-react";
 
 interface AIInsightPanelProps {
   title: string;
@@ -15,6 +15,13 @@ export const AIInsightPanel = ({
   insights, 
   className = "" 
 }: AIInsightPanelProps) => {
+  const [showDetails, setShowDetails] = useState(false);
+  const summary = useMemo(() => {
+    if (insights.length === 0) return "No insights available yet.";
+    if (insights.length === 1) return insights[0];
+    return `${insights.length} insight${insights.length === 1 ? "" : "s"} available. Top signal: ${insights[0]}`;
+  }, [insights]);
+
   return (
     <div className={`p-5 rounded-3xl bg-accent/5 border border-accent/20 relative overflow-hidden group ${className}`}>
       {/* Decorative Lavender Glow */}
@@ -44,9 +51,28 @@ export const AIInsightPanel = ({
         ))}
       </ul>
 
+      {showDetails && (
+        <div className="mt-5 rounded-2xl border border-accent/20 bg-white/70 p-4">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-accent mb-2">Detail analysis</p>
+          <p className="text-sm text-text-secondary font-body leading-relaxed mb-3">{summary}</p>
+          <div className="space-y-2">
+            {insights.map((insight, index) => (
+              <div key={`${insight}-${index}`} className="flex gap-2 text-sm text-text-secondary font-body">
+                <span className="text-accent font-bold">{index + 1}.</span>
+                <span>{insight}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-5 flex justify-end">
-        <button className="text-xs font-bold text-accent flex items-center gap-1.5 hover:gap-2 transition-all">
-          View Detail Analysis <ArrowRight size={14} />
+        <button
+          onClick={() => setShowDetails((prev) => !prev)}
+          className="text-xs font-bold text-accent flex items-center gap-1.5 hover:gap-2 transition-all"
+        >
+          {showDetails ? "Hide Detail Analysis" : "View Detail Analysis"}
+          {showDetails ? <ChevronUp size={14} /> : <ArrowRight size={14} />}
         </button>
       </div>
     </div>

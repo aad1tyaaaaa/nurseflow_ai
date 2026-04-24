@@ -235,6 +235,8 @@ export const api = {
       apiRequest<unknown>(`/fall-risk/assess/${id}`, { method: "POST", body }),
     mobilityEvent: (body: unknown) =>
       apiRequest<unknown>("/fall-risk/mobility-event", { method: "POST", body }),
+    mobilityEvents: (patientId: string) =>
+      apiRequest<unknown[]>(`/fall-risk/mobility-events/${patientId}`),
   },
   handoffs: {
     list: () => apiRequest<unknown[]>("/handoffs"),
@@ -259,6 +261,16 @@ export const api = {
         body: form,
         isForm: true,
       }),
+    structure: (body: { transcript: string }) =>
+      apiRequest<{
+        structured_data: {
+          symptoms: string[];
+          observations: string[];
+          actions_needed: string[];
+        };
+        actionable_items: string[];
+        flagged_concerns: string[];
+      }>("/voice-notes/structure", { method: "POST", body }),
   },
   analytics: {
     shift: () => apiRequest<unknown>("/analytics/shift"),
@@ -269,5 +281,19 @@ export const api = {
     get: () => apiRequest<UserProfile>("/settings"),
     update: (body: Partial<UserProfile>) =>
       apiRequest<UserProfile>("/settings", { method: "PUT", body }),
+  },
+  ai: {
+    handoffNote: (body: { patient_id?: string; clinical_notes: string }) =>
+      apiRequest<{ handoff_note: string }>("/ai/handoff-note", { method: "POST", body }),
+    medicationUrgency: (body: { medications: string[] }) =>
+      apiRequest<{ results: { medication: string; urgency: string }[] }>("/ai/medication-urgency", { method: "POST", body }),
+    navigate: (body: { utterance: string; current_route?: string }) =>
+      apiRequest<{
+        intent: "navigate" | "search_patient" | "unknown";
+        route: string | null;
+        patient_query: string | null;
+        speech_response: string;
+        raw?: string | null;
+      }>("/ai/navigate", { method: "POST", body }),
   },
 };

@@ -2,6 +2,7 @@ import uuid
 import aiofiles
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -14,17 +15,32 @@ from app.services.voice_note_service import VoiceNoteService
 router = APIRouter(prefix="/voice-notes", tags=["Voice Notes"])
 
 
+class StructureRequest(BaseModel):
+    transcript: str
+
+
+class StructureResponse(BaseModel):
+    structured_data: dict
+    actionable_items: list[str]
+    flagged_concerns: list[str]
+
+
 @router.post("", response_model=VoiceNoteResponse, status_code=status.HTTP_201_CREATED)
 async def upload_voice_note(
     patient_id: uuid.UUID = Form(...),
     audio: UploadFile = File(...),
     duration_seconds: float = Form(None),
+    transcript: str = Form(None),
     current_user: User = Depends(require_permission("voice_notes:create")),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Upload a voice note for a patient. Triggers automatic transcription and NLP parsing.
-    Supports hands-free voice recording workflow.
+    Upload a recorded voice note for a patient.
+
+    The browser captures audio via MediaRecorder and the transcript via the
+    Web Speech API. The backend stores the audio blob, saves the transcript,
+    and runs the transcript through the Groq LLM to extract structured
+    clinical data (symptoms, observations, actionable items, flagged concerns).
     """
     # Validate file size
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
@@ -32,25 +48,64 @@ async def upload_voice_note(
     if len(contents) > max_bytes:
         raise HTTPException(status_code=413, detail=f"File too large. Max {settings.MAX_UPLOAD_SIZE_MB}MB")
 
-    # Validate content type
-    allowed_types = ["audio/mpeg", "audio/wav", "audio/ogg", "audio/webm", "audio/mp4"]
-    if audio.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail=f"Unsupported audio format. Allowed: {allowed_types}")
+    # Validate content type — be permissive: accept anything with audio/* or the
+    # common generic fallbacks some browsers emit for MediaRecorder.
+    ct = (audio.content_type or "").lower()
+    allowed_prefixes = ("audio/",)
+    allowed_exact = {"application/octet-stream", "video/webm"}
+    if not (ct.startswith(allowed_prefixes) or ct in allowed_exact):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported audio format: {ct!r}. Expected audio/* (e.g. audio/webm, audio/mp4).",
+        )
 
     # Save file
-    file_path = VoiceNoteService.get_upload_path(patient_id, audio.filename)
+    file_path = VoiceNoteService.get_upload_path(patient_id, audio.filename or "note.webm")
     async with aiofiles.open(file_path, "wb") as f:
         await f.write(contents)
 
-    # Create record
+    # Create record with transcript (if any)
     voice_note = await VoiceNoteService.create_voice_note(
-        db, patient_id, current_user.id, file_path, duration_seconds
+        db,
+        patient_id=patient_id,
+        nurse_id=current_user.id,
+        audio_file_path=file_path,
+        duration_seconds=duration_seconds,
+        transcript=(transcript or None),
     )
 
-    # Trigger async transcription (in production, this would be a background task)
-    await VoiceNoteService.transcribe_and_parse(db, voice_note.id)
+    # Structure the transcript via LLM (no-op if transcript is empty or no API key)
+    await VoiceNoteService.structure_transcript(db, voice_note.id)
+    await db.refresh(voice_note)
 
     return voice_note
+
+
+@router.post("/structure", response_model=StructureResponse)
+async def structure_transcript_preview(
+    body: StructureRequest,
+    current_user: User = Depends(require_permission("voice_notes:create")),
+):
+    """
+    Run the Groq LLM over a transcript and return structured clinical data
+    without persisting anything. Used by the Voice Studio preview pane.
+    """
+    transcript = (body.transcript or "").strip()
+    if not transcript:
+        raise HTTPException(status_code=400, detail="transcript is required")
+    if not settings.GROQ_API_KEY:
+        raise HTTPException(status_code=503, detail="GROQ_API_KEY is not configured on the server")
+
+    try:
+        structured, actionable, flagged = VoiceNoteService._groq_structure(transcript)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"LLM call failed: {e}")
+
+    return StructureResponse(
+        structured_data=structured,
+        actionable_items=actionable,
+        flagged_concerns=flagged,
+    )
 
 
 @router.get("/patient/{patient_id}", response_model=list[VoiceNoteResponse])
@@ -95,3 +150,4 @@ async def get_voice_note(
     if not note:
         raise HTTPException(status_code=404, detail="Voice note not found")
     return note
+

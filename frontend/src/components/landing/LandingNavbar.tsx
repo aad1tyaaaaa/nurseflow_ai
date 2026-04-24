@@ -1,12 +1,20 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Menu } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { motion } from "framer-motion";
 
 export const LandingNavbar = () => {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const navLinks = [
+    { href: "#features", label: "Features" },
+    { href: "#about", label: "About" },
+    { href: "#impact", label: "Impact" },
+  ];
+
   return (
     <nav className="absolute top-0 left-0 right-0 z-50 w-full px-6 py-6">
       <div className="mx-auto flex max-w-7xl items-center justify-between">
@@ -34,9 +42,9 @@ export const LandingNavbar = () => {
 
         {/* Desktop Links */}
         <div className="hidden md:flex items-center gap-10">
-          <LandingNavLink href="#features" label="Features" />
-          <LandingNavLink href="#about" label="About" />
-          <LandingNavLink href="#testimonials" label="Impact" />
+          {navLinks.map((link) => (
+            <LandingNavLink key={link.href} href={link.href} label={link.label} />
+          ))}
         </div>
 
         {/* Auth CTA */}
@@ -59,11 +67,39 @@ export const LandingNavbar = () => {
               Start Your Shift
             </motion.button>
           </Link>
-          <button className="md:hidden text-text-primary">
-            <Menu size={24} />
+          <button
+            onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+            className="md:hidden text-text-primary p-2 rounded-xl hover:bg-white/70 transition-colors"
+            aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
+          >
+            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
       </div>
+
+      {isMobileMenuOpen && (
+        <div className="md:hidden mt-4 mx-auto max-w-7xl rounded-3xl border border-border bg-white/95 backdrop-blur-md shadow-xl p-4">
+          <div className="flex flex-col gap-2">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="px-4 py-3 rounded-2xl text-sm font-bold text-text-primary hover:bg-surface-raised transition-colors"
+              >
+                {link.label}
+              </Link>
+            ))}
+            <Link
+              href="/login"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="px-4 py-3 rounded-2xl bg-primary-deep text-white text-sm font-bold text-center"
+            >
+              Start Your Shift
+            </Link>
+          </div>
+        </div>
+      )}
     </nav>
   );
 };

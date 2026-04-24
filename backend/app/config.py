@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
 
+    # Groq LLM
+    GROQ_API_KEY: Optional[str] = None
+    GROQ_MODEL: Optional[str] = "llama3-8b-8192"
+
     class Config:
         env_file = ".env"
         case_sensitive = True
