@@ -64,6 +64,22 @@ async def get_patient_voice_notes(
     return notes
 
 
+@router.get("", response_model=list[VoiceNoteResponse])
+async def list_voice_notes(
+    limit: int = 50,
+    current_user: User = Depends(require_permission("voice_notes:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """List the most recent voice notes across all patients."""
+    from sqlalchemy import select
+    from app.models.voice_note import VoiceNote
+
+    result = await db.execute(
+        select(VoiceNote).order_by(VoiceNote.recorded_at.desc()).limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 @router.get("/{note_id}", response_model=VoiceNoteResponse)
 async def get_voice_note(
     note_id: uuid.UUID,

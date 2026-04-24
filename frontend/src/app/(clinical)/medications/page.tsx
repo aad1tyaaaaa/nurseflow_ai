@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Pill, 
@@ -18,18 +18,69 @@ import {
 import { BentoGrid, BentoGridItem } from "@/components/layout/BentoGrid";
 import Card from "@/components/ui/Card";
 import { AIInsightPanel } from "@/components/ui/AIInsightPanel";
+import { api } from "@/lib/api";
 
-const medications = [
-  { id: 1, name: "Insulin Aspart", patient: "Robert Miller", bed: "Bed 7", dose: "6 units", route: "Subcut", time: "14:00", urgency: "critical", status: "due" },
-  { id: 2, name: "Heparin Infusion", patient: "Sarah Chen", bed: "Bed 3", dose: "1000 u/hr", route: "IV", time: "14:15", urgency: "warning", status: "ready" },
-  { id: 3, name: "Albuterol Nebr.", patient: "Robert Miller", bed: "Bed 7", dose: "2.5mg", route: "Inhalt", time: "14:30", urgency: "warning", status: "ready" },
-  { id: 4, name: "Lisinopril", patient: "James Wilson", bed: "Bed 12", dose: "10mg", route: "Oral", time: "15:00", urgency: "safe", status: "future" },
-  { id: 5, name: "Ceftriaxone", patient: "Michael Scott", bed: "Bed 9", dose: "1g", route: "IVPB", time: "15:30", urgency: "safe", status: "future" },
-  { id: 6, name: "Furosemide", patient: "David Goggins", bed: "Bed 2", dose: "40mg", route: "IV Push", time: "16:00", urgency: "safe", status: "future" },
-];
+interface Med {
+  id: string;
+  drug_name: string;
+  dose: string;
+  route: string;
+  scheduled_time: string;
+  urgency: string;
+  status: string;
+  patient_id: string;
+}
+
+interface Patient {
+  id: string;
+  first_name: string;
+  last_name: string;
+  bed_number: string | null;
+}
 
 const MedicationsPage = () => {
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [medications, setMedications] = useState<Med[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  useEffect(() => {
+    api.medications.queue().then((data) => {
+      const queue = data as { medications?: Med[] };
+      if (queue.medications) setMedications(queue.medications);
+    }).catch(() => {});
+
+    api.patients.list().then((data) => {
+      setPatients(data as Patient[]);
+    }).catch(() => {});
+  }, []);
+
+  const getPatient = (id: string) => patients.find(p => p.id === id);
+
+  const handleAdminister = async (medId: string) => {
+    try {
+      await api.medications.administer(medId);
+      setMedications(prev => prev.filter(m => m.id !== medId));
+    } catch {
+      // error
+    }
+  };
+
+  const filtered = medications.filter(m => {
+    if (!searchTerm) return true;
+    const p = getPatient(m.patient_id);
+    const pName = p ? `${p.first_name} ${p.last_name}` : "";
+    return m.drug_name.toLowerCase().includes(searchTerm.toLowerCase()) || pName.toLowerCase().includes(searchTerm.toLowerCase());
+  });
+
+  // Generate insights from real data
+  const criticalCount = medications.filter(m => m.urgency === "critical").length;
+  const dueCount = medications.filter(m => m.status === "due" || m.status === "overdue").length;
+  const insights = [
+    `${medications.length} medications in queue. ${criticalCount} critical priority.`,
+    dueCount > 0 ? `${dueCount} medication(s) currently due or overdue.` : "All medications on schedule.",
+    `Compliance tracking active for ${patients.length} patients.`,
+  ];
 
   return (
     <div className="space-y-8 pb-12">
@@ -70,6 +121,8 @@ const MedicationsPage = () => {
             <input 
                type="text" 
                placeholder="Search by medication or patient..." 
+               value={searchTerm}
+               onChange={(e) => setSearchTerm(e.target.value)}
                className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-white border border-border focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-body text-sm"
             />
          </div>
@@ -84,7 +137,7 @@ const MedicationsPage = () => {
       </div>
 
       <BentoGrid>
-         {/* 1. Main Queue Tile - Wide (8 cols) */}
+         {/* Main Queue Tile */}
          <BentoGridItem span={8}>
             <Card className="h-full p-0 flex flex-col">
                <div className="p-6 border-b border-border flex items-center justify-between bg-surface/50">
@@ -97,7 +150,16 @@ const MedicationsPage = () => {
                
                <div className="p-6 space-y-4 flex-grow overflow-y-auto max-h-[600px] custom-scrollbar">
                   <AnimatePresence mode="popLayout">
-                     {medications.map((med) => (
+                     {filtered.length === 0 && (
+                       <p className="text-sm text-text-muted italic text-center py-8">No medications in queue.</p>
+                     )}
+                     {filtered.map((med) => {
+                        const patient = getPatient(med.patient_id);
+                        const patientName = patient ? `${patient.first_name} ${patient.last_name}` : "Unknown";
+                        const bed = patient?.bed_number ? `Bed ${patient.bed_number}` : "";
+                        const timeStr = med.scheduled_time ? new Date(med.scheduled_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
+
+                        return (
                         <motion.div
                            key={med.id}
                            layout
@@ -116,19 +178,19 @@ const MedicationsPage = () => {
                               <div className="flex items-center gap-4 flex-grow">
                                  <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${
                                     med.urgency === 'critical' ? 'bg-critical/10 text-critical shadow-sm shadow-critical/10' : 
-                                    med.urgency === 'warning' ? 'bg-warning/10 text-amber-600 shadow-sm shadow-warning/10' : 'bg-primary/10 text-primary-deep shadow-sm shadow-primary/10'
+                                    med.urgency === 'high' ? 'bg-warning/10 text-amber-600 shadow-sm shadow-warning/10' : 'bg-primary/10 text-primary-deep shadow-sm shadow-primary/10'
                                  }`}>
                                     <Pill size={24} />
                                  </div>
                                  <div className="flex-grow min-w-0">
                                     <div className="flex items-center gap-2">
-                                       <h3 className="font-display font-bold text-text-primary text-lg truncate">{med.name}</h3>
+                                       <h3 className="font-display font-bold text-text-primary text-lg truncate">{med.drug_name}</h3>
                                        <span className="text-xs text-text-muted font-body truncate">• {med.dose} {med.route}</span>
                                     </div>
                                     <div className="flex items-center gap-2 mt-1">
                                        <User size={12} className="text-primary-deep" />
-                                       <span className="text-sm font-bold text-text-secondary">{med.patient}</span>
-                                       <span className="text-xs text-text-muted font-mono bg-surface px-2 py-0.5 rounded-lg border border-border">{med.bed}</span>
+                                       <span className="text-sm font-bold text-text-secondary">{patientName}</span>
+                                       {bed && <span className="text-xs text-text-muted font-mono bg-surface px-2 py-0.5 rounded-lg border border-border">{bed}</span>}
                                     </div>
                                  </div>
                               </div>
@@ -136,9 +198,12 @@ const MedicationsPage = () => {
                               <div className="flex items-center gap-6">
                                  <div className="flex flex-col items-end">
                                     <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Target</span>
-                                    <span className={`text-lg font-mono font-bold ${med.urgency === 'critical' ? 'text-critical' : 'text-text-primary'}`}>{med.time}</span>
+                                    <span className={`text-lg font-mono font-bold ${med.urgency === 'critical' ? 'text-critical' : 'text-text-primary'}`}>{timeStr}</span>
                                  </div>
-                                 <button className="h-10 px-6 rounded-2xl bg-primary text-text-primary font-bold text-sm shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all">
+                                 <button
+                                    onClick={() => handleAdminister(med.id)}
+                                    className="h-10 px-6 rounded-2xl bg-primary text-text-primary font-bold text-sm shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
+                                 >
                                     Administer
                                  </button>
                                  <button className="p-2 rounded-xl hover:bg-surface text-text-muted transition-colors transition-transform active:scale-90">
@@ -147,22 +212,19 @@ const MedicationsPage = () => {
                               </div>
                            </div>
                         </motion.div>
-                     ))}
+                        );
+                     })}
                   </AnimatePresence>
                </div>
             </Card>
          </BentoGridItem>
 
-         {/* 2. Pharmacology Insights - Med (4 cols) */}
+         {/* Pharmacology Insights */}
          <BentoGridItem span={4}>
             <div className="flex flex-col gap-6 h-full">
                <AIInsightPanel 
                   title="Pharmacology Analysis"
-                  insights={[
-                    "Bed 7 Insulin dose adjusted based on 13:45 Glucose reading (242 mg/dL).",
-                    "Interaction Alert: Bed 3 Heparin rate matches current PTT trend.",
-                    "Stock Check: Unit B Pyxis is low on Albuterol vials (3 remaining)."
-                  ]}
+                  insights={insights}
                />
 
                <Card className="bg-primary-deep text-white border-0 shadow-lg shadow-primary-deep/20 overflow-hidden relative">
@@ -172,23 +234,25 @@ const MedicationsPage = () => {
                      Shift Productivity
                   </h3>
                   <div className="space-y-6 relative z-10">
-                     <StatLine label="Compliance" value="100%" progress={100} />
-                     <StatLine label="Response Time" value="4.2m" progress={80} />
+                     <StatLine label="Queue Remaining" value={`${medications.length}`} progress={medications.length > 0 ? Math.max(10, 100 - (medications.length * 10)) : 100} />
+                     <StatLine label="Critical" value={`${criticalCount}`} progress={criticalCount > 0 ? Math.min(100, criticalCount * 25) : 0} />
                   </div>
                </Card>
 
+               {criticalCount > 0 && (
                <Card className="bg-critical text-white border-0 shadow-xl shadow-critical/20 flex-grow">
                   <div className="flex items-center gap-3 mb-4">
                      <AlertTriangle size={20} className="text-white/80" />
-                     <h3 className="font-display font-bold text-lg">Urgent Stock</h3>
+                     <h3 className="font-display font-bold text-lg">Critical Priority</h3>
                   </div>
                   <p className="text-sm font-body text-white/90 leading-relaxed mb-6">
-                    Bed 7 requires specialized IV pump. Unit stock: 0. Requisitioning from Supply...
+                    {criticalCount} medication(s) require immediate attention.
                   </p>
                   <button className="w-full bg-white/10 backdrop-blur-md text-white font-bold py-3.5 rounded-2xl hover:bg-white/20 border border-white/20 transition-all flex items-center justify-center gap-2 text-sm">
-                     Confirm Order <ChevronRight size={18} />
+                     View Critical <ChevronRight size={18} />
                   </button>
                </Card>
+               )}
             </div>
          </BentoGridItem>
       </BentoGrid>

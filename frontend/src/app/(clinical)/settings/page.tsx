@@ -15,9 +15,34 @@ import {
 } from "lucide-react";
 import Card from "@/components/ui/Card";
 import { BentoGrid, BentoGridItem } from "@/components/layout/BentoGrid";
+import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
+
+interface ProfileDraft {
+  full_name: string;
+  unit: string;
+}
 
 const SettingsPage = () => {
   const [activeSection, setActiveSection] = useState("profile");
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [profileDraft, setProfileDraft] = useState<ProfileDraft | null>(null);
+
+  const handleSave = async () => {
+    if (activeSection !== "profile" || !profileDraft) return;
+    setSaving(true);
+    setSaveSuccess(false);
+    try {
+      await api.settings.update(profileDraft);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error("Failed to save settings", err);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-8 pb-12">
@@ -71,7 +96,7 @@ const SettingsPage = () => {
               
               <div className="relative z-10 h-full flex flex-col">
                  <div className="flex-grow">
-                    {activeSection === "profile" && <ProfileSettings />}
+                    {activeSection === "profile" && <ProfileSettings onDraftChange={setProfileDraft} />}
                     {activeSection === "navigation" && <NavigationSettings />}
                     {activeSection === "notifications" && <NotificationSettings />}
                     {activeSection === "security" && <SecuritySettings />}
@@ -84,10 +109,19 @@ const SettingsPage = () => {
                        Terminate All Sessions
                     </button>
                     <div className="flex items-center gap-4 w-full md:w-auto">
-                       <button className="flex-1 md:flex-none px-8 py-3.5 rounded-2xl border border-border text-text-secondary font-bold text-sm hover:bg-surface transition-all">Cancel</button>
-                       <button className="flex-1 md:flex-none btn-primary px-10 py-3.5">
-                          <Save size={18} />
-                          Finalize Changes
+                       <button
+                          onClick={() => setProfileDraft(null)}
+                          className="flex-1 md:flex-none px-8 py-3.5 rounded-2xl border border-border text-text-secondary font-bold text-sm hover:bg-surface transition-all"
+                       >
+                         Cancel
+                       </button>
+                       <button
+                          onClick={handleSave}
+                          disabled={saving || activeSection !== "profile"}
+                          className="flex-1 md:flex-none btn-primary px-10 py-3.5 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                       >
+                          {saveSuccess ? <CheckCircle2 size={18} /> : <Save size={18} />}
+                          {saving ? "Saving..." : saveSuccess ? "Saved!" : "Finalize Changes"}
                        </button>
                     </div>
                  </div>
@@ -99,25 +133,46 @@ const SettingsPage = () => {
   );
 };
 
-const ProfileSettings = () => (
-  <div className="space-y-8 animate-fade-in">
-     <div className="flex items-center gap-6 mb-10">
-        <div className="h-24 w-24 rounded-[2.5rem] bg-primary/20 text-primary-deep flex items-center justify-center font-bold text-3xl shadow-lg ring-4 ring-white">P</div>
-        <div>
-           <h3 className="text-2xl font-bold text-text-primary">Priya Patel, RN</h3>
-           <p className="text-text-secondary font-body">Senior Critical Care Nurse • ID: 4892-12</p>
-           <button className="mt-2 text-xs font-bold text-primary-deep hover:underline">Change Profile photo</button>
-        </div>
-     </div>
-     
-     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <SettingField label="Full Name" value="Priya Patel" />
-        <SettingField label="Title / Certification" value="Registered Nurse, BSN" />
-        <SettingField label="Assigned Unit" value="ICU Unit B (East Wing)" />
-        <SettingField label="Hospital Email" value="p.patel@cityhospital.org" />
-     </div>
-  </div>
-);
+const ProfileSettings = ({ onDraftChange }: { onDraftChange: (draft: { full_name: string; unit: string }) => void }) => {
+  const { user } = useAuth();
+  const fullName = user?.fullName || "Nurse";
+  const initial = fullName.trim().charAt(0).toUpperCase() || "N";
+  const email = user?.email || "—";
+  const unit = user?.unit || "";
+  const roleLabel = user?.role
+    ? user.role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    : "Clinician";
+
+  const [nameVal, setNameVal] = useState(fullName);
+  const [unitVal, setUnitVal] = useState(unit);
+
+  const handleChange = (field: "full_name" | "unit", value: string) => {
+    const updated = { full_name: field === "full_name" ? value : nameVal, unit: field === "unit" ? value : unitVal };
+    if (field === "full_name") setNameVal(value);
+    else setUnitVal(value);
+    onDraftChange(updated);
+  };
+
+  return (
+    <div className="space-y-8 animate-fade-in">
+       <div className="flex items-center gap-6 mb-10">
+          <div className="h-24 w-24 rounded-[2.5rem] bg-primary/20 text-primary-deep flex items-center justify-center font-bold text-3xl shadow-lg ring-4 ring-white">{initial}</div>
+          <div>
+             <h3 className="text-2xl font-bold text-text-primary">{fullName}</h3>
+             <p className="text-text-secondary font-body">{roleLabel} • ID: {user?.id?.slice(0, 8) ?? "—"}</p>
+             <button className="mt-2 text-xs font-bold text-primary-deep hover:underline">Change Profile photo</button>
+          </div>
+       </div>
+       
+       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <EditableField label="Full Name" value={nameVal} onChange={(v) => handleChange("full_name", v)} />
+          <SettingField label="Role" value={roleLabel} />
+          <EditableField label="Assigned Unit" value={unitVal} onChange={(v) => handleChange("unit", v)} />
+          <SettingField label="Hospital Email" value={email} />
+       </div>
+    </div>
+  );
+};
 
 const NavigationSettings = () => (
   <div className="space-y-8 animate-fade-in">
@@ -187,6 +242,25 @@ const SettingField = ({ label, value }: SettingFieldProps) => (
      <input 
         type="text" 
         defaultValue={value}
+        readOnly
+        className="w-full px-5 py-3.5 rounded-2xl bg-surface-raised border border-border outline-none font-body text-sm font-medium text-text-muted cursor-not-allowed"
+     />
+  </div>
+);
+
+interface EditableFieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+const EditableField = ({ label, value, onChange }: EditableFieldProps) => (
+  <div className="space-y-2">
+     <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest ml-1">{label}</label>
+     <input 
+        type="text" 
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         className="w-full px-5 py-3.5 rounded-2xl bg-surface-raised border border-border focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-body text-sm font-medium"
      />
   </div>

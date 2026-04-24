@@ -1,16 +1,33 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { useAuth } from "@/context/AuthContext";
 
 export default function ClinicalLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // Option to choose between sidebar or topbar (defaulting to sidebar for deep clinical focus)
   const [useSidebar] = useState(true);
+  const { isAuthenticated, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.replace("/login");
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  if (isLoading || !isAuthenticated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg">
+        <div className="text-sm text-text-muted">Loading…</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-bg selection:bg-primary selection:text-text-primary">

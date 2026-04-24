@@ -56,6 +56,12 @@ async def refresh_token(payload: RefreshTokenRequest, db: AsyncSession = Depends
     return tokens
 
 
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(current_user: User = Depends(get_current_user)):
+    """Log out the current user. Client should discard tokens."""
+    return None
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     """Get current authenticated user profile."""

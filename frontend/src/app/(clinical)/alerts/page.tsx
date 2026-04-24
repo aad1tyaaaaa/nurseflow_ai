@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Bell, 
@@ -16,29 +16,105 @@ import {
 import Card from "@/components/ui/Card";
 import { BentoGrid, BentoGridItem } from "@/components/layout/BentoGrid";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { api } from "@/lib/api";
 
 interface Alert {
-  id: number;
-  type: string;
-  patient: string;
-  bed: string;
+  id: string;
+  alert_type: string;
+  patient_id: string;
   title: string;
-  detail: string;
-  time: string;
-  priority: "safe" | "warning" | "critical";
+  message: string;
+  severity: string;
   status: string;
+  created_at: string;
+  acknowledged_at?: string | null;
+  resolved_at?: string | null;
 }
 
-const alerts: Alert[] = [
-  { id: 1, type: "vitals", patient: "Robert Miller", bed: "Bed 7", title: "Critical SpO2 Drop", detail: "Oxygen saturation dropped to 82% over 3 minutes. Automated O2 adjustment failed.", time: "2m ago", priority: "critical", status: "unresolved" },
-  { id: 2, type: "fall", patient: "Michael Scott", bed: "Bed 9", title: "Bed Exit Alarm", detail: "Unassigned bed exit protocol triggered. Vision-AI detected patient attempting to stand.", time: "8m ago", priority: "critical", status: "unresolved" },
-  { id: 3, type: "meds", patient: "Sarah Chen", bed: "Bed 3", title: "Pending Insulin Dose", detail: "High priority Insulin Aspart dose due in 15 minutes. Pre-check vitals required.", time: "12m ago", priority: "warning", status: "unresolved" },
-  { id: 4, type: "vitals", patient: "James Wilson", bed: "Bed 12", title: "HR Anomaly Detected", detail: "Sustained Tachycardia (105 bpm) noted over the last 15 minutes. Patient resting.", time: "25m ago", priority: "warning", status: "unresolved" },
-  { id: 5, type: "meds", patient: "David Goggins", bed: "Bed 2", title: "Medication Administered", detail: "40mg Furosemide administered successfully. Tracking therapeutic response.", time: "1h ago", priority: "safe", status: "resolved" },
-];
+function severityToPriority(severity: string): "safe" | "warning" | "critical" {
+  if (severity === "critical" || severity === "urgent") return "critical";
+  if (severity === "warning") return "warning";
+  return "safe";
+}
+
+function alertTypeToCategory(type: string): string {
+  if (type.includes("fall")) return "fall";
+  if (type.includes("medication") || type.includes("med")) return "meds";
+  return "vitals";
+}
+
+function timeAgo(isoDate: string): string {
+  const diff = Math.floor((Date.now() - new Date(isoDate).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
 
 const AlertsPage = () => {
   const [filter, setFilter] = useState<string>("all");
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const loadAlerts = useCallback(async () => {
+    try {
+      const data = await api.alerts.list();
+      setAlerts(data as Alert[]);
+    } catch (err) {
+      console.error("Failed to load alerts", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAlerts();
+  }, [loadAlerts]);
+
+  const handleAcknowledge = async (id: string) => {
+    try {
+      await api.alerts.acknowledge(id);
+      setAlerts((prev) =>
+        prev.map((a) =>
+          a.id === id ? { ...a, status: "acknowledged", acknowledged_at: new Date().toISOString() } : a
+        )
+      );
+    } catch (err) {
+      console.error("Failed to acknowledge alert", err);
+    }
+  };
+
+  const handleResolve = async (id: string) => {
+    try {
+      await api.alerts.resolve(id, { resolution_notes: "Resolved by nurse" });
+      setAlerts((prev) =>
+        prev.map((a) =>
+          a.id === id ? { ...a, status: "resolved", resolved_at: new Date().toISOString() } : a
+        )
+      );
+    } catch (err) {
+      console.error("Failed to resolve alert", err);
+    }
+  };
+
+  const filteredAlerts = alerts.filter((a) => {
+    const priority = severityToPriority(a.severity);
+    const isResolved = a.status === "resolved";
+    const matchesFilter =
+      filter === "all" ||
+      (filter === "critical" && priority === "critical") ||
+      (filter === "warning" && priority === "warning") ||
+      (filter === "resolved" && isResolved);
+    const matchesSearch =
+      !searchQuery ||
+      a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      a.message.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesFilter && matchesSearch;
+  });
+
+  const criticalCount = alerts.filter(
+    (a) => severityToPriority(a.severity) === "critical" && a.status !== "resolved"
+  ).length;
 
   return (
     <div className="space-y-8 pb-12">
@@ -67,7 +143,9 @@ const AlertsPage = () => {
          <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
             <input 
-               type="text" 
+               type="text"
+               value={searchQuery}
+               onChange={(e) => setSearchQuery(e.target.value)}
                placeholder="Search alerts by patient or type..." 
                className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-white border border-border focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-body text-sm"
             />
@@ -97,72 +175,99 @@ const AlertsPage = () => {
                      Live Activity Stream
                   </h3>
                   <div className="flex items-center gap-2">
-                     <span className="flex h-2 w-2 rounded-full bg-critical animate-pulse" />
-                     <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest transition-all">2 New Criticals</span>
+                     {criticalCount > 0 && (
+                       <>
+                         <span className="flex h-2 w-2 rounded-full bg-critical animate-pulse" />
+                         <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest transition-all">{criticalCount} New Critical{criticalCount > 1 ? "s" : ""}</span>
+                       </>
+                     )}
                   </div>
                </div>
                
                <div className="p-6 space-y-4 flex-grow overflow-y-auto max-h-[700px] custom-scrollbar">
-                  <AnimatePresence mode="popLayout">
-                     {alerts
-                        .filter(a => filter === 'all' || a.priority === filter || (filter === 'resolved' && a.status === 'resolved'))
-                        .map((alert) => (
-                        <motion.div
-                           key={alert.id}
-                           layout
-                           initial={{ opacity: 0, y: 5 }}
-                           animate={{ opacity: 1, y: 0 }}
-                           exit={{ opacity: 0, scale: 0.98 }}
-                           className={`group relative overflow-hidden p-6 rounded-3xl border bg-bg transition-all hover:shadow-xl hover:shadow-primary/5 ${
-                              alert.priority === 'critical' ? 'border-critical/30 ring-1 ring-critical/5' : 'border-border'
-                           }`}
-                        >
-                           <div className="flex items-start justify-between gap-6">
-                              <div className="flex gap-4 flex-grow">
-                                 <div className={`h-14 w-14 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm ${
-                                    alert.type === 'vitals' ? 'bg-indigo-50 text-indigo-600' : 
-                                    alert.type === 'fall' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
-                                 }`}>
-                                    {alert.type === 'vitals' && <Activity size={28} />}
-                                    {alert.type === 'fall' && <ShieldAlert size={28} />}
-                                    {alert.type === 'meds' && <Pill size={28} />}
+                  {loading ? (
+                    <div className="flex items-center justify-center py-20 text-text-muted font-body">Loading alerts...</div>
+                  ) : filteredAlerts.length === 0 ? (
+                    <div className="flex items-center justify-center py-20 text-text-muted font-body italic">No alerts found.</div>
+                  ) : (
+                    <AnimatePresence mode="popLayout">
+                       {filteredAlerts.map((alert) => {
+                         const priority = severityToPriority(alert.severity);
+                         const category = alertTypeToCategory(alert.alert_type);
+                         const isResolved = alert.status === "resolved";
+                         return (
+                           <motion.div
+                              key={alert.id}
+                              layout
+                              initial={{ opacity: 0, y: 5 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 0.98 }}
+                              className={`group relative overflow-hidden p-6 rounded-3xl border bg-bg transition-all hover:shadow-xl hover:shadow-primary/5 ${
+                                 priority === 'critical' ? 'border-critical/30 ring-1 ring-critical/5' : 'border-border'
+                              }`}
+                           >
+                              <div className="flex items-start justify-between gap-6">
+                                 <div className="flex gap-4 flex-grow">
+                                    <div className={`h-14 w-14 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm ${
+                                       category === 'vitals' ? 'bg-indigo-50 text-indigo-600' : 
+                                       category === 'fall' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
+                                    }`}>
+                                       {category === 'vitals' && <Activity size={28} />}
+                                       {category === 'fall' && <ShieldAlert size={28} />}
+                                       {category === 'meds' && <Pill size={28} />}
+                                    </div>
+                                    <div>
+                                       <div className="flex items-center gap-3 mb-1">
+                                          <h3 className="font-display font-bold text-text-primary text-lg leading-tight transition-colors group-hover:text-primary-deep">{alert.title}</h3>
+                                          <StatusBadge status={priority} />
+                                       </div>
+                                       <div className="flex items-center gap-3 mb-3">
+                                          <span className="text-[10px] text-text-muted flex items-center gap-1 font-body uppercase tracking-wider">
+                                             <Clock size={12} />
+                                             {timeAgo(alert.created_at)}
+                                          </span>
+                                       </div>
+                                       <p className="text-sm text-text-secondary font-body leading-relaxed max-w-2xl">{alert.message}</p>
+                                    </div>
                                  </div>
-                                 <div>
-                                    <div className="flex items-center gap-3 mb-1">
-                                       <h3 className="font-display font-bold text-text-primary text-lg leading-tight transition-colors group-hover:text-primary-deep">{alert.title}</h3>
-                                       <StatusBadge status={alert.priority as "safe" | "warning" | "critical"} />
-                                    </div>
-                                    <div className="flex items-center gap-3 mb-3">
-                                       <span className="text-sm font-bold text-text-primary">{alert.patient}</span>
-                                       <span className="text-xs text-text-muted font-mono bg-surface px-2 py-0.5 rounded-lg border border-border">{alert.bed}</span>
-                                       <span className="text-[10px] text-text-muted flex items-center gap-1 font-body uppercase tracking-wider">
-                                          <Clock size={12} />
-                                          {alert.time}
-                                       </span>
-                                    </div>
-                                    <p className="text-sm text-text-secondary font-body leading-relaxed max-w-2xl">{alert.detail}</p>
-                                 </div>
-                              </div>
-                              
-                              <div className="flex flex-col gap-2 items-end">
-                                 {alert.status === 'resolved' ? (
-                                    <div className="flex items-center gap-2 text-success font-bold text-[10px] uppercase tracking-widest bg-success/10 px-3 py-1.5 rounded-xl border border-success/20">
-                                       <CheckCircle2 size={14} />
-                                       Resolved
-                                    </div>
-                                 ) : (
-                                    <button className="h-10 px-6 rounded-xl bg-primary text-text-primary font-bold text-xs shadow-lg shadow-primary/20 hover:translate-y-[-2px] active:translate-y-0 transition-all whitespace-nowrap">
-                                       Acknowledge
+                                 
+                                 <div className="flex flex-col gap-2 items-end">
+                                    {isResolved ? (
+                                       <div className="flex items-center gap-2 text-success font-bold text-[10px] uppercase tracking-widest bg-success/10 px-3 py-1.5 rounded-xl border border-success/20">
+                                          <CheckCircle2 size={14} />
+                                          Resolved
+                                       </div>
+                                    ) : alert.status === "acknowledged" ? (
+                                       <div className="flex flex-col gap-2 items-end">
+                                          <div className="flex items-center gap-2 text-warning font-bold text-[10px] uppercase tracking-widest bg-warning/10 px-3 py-1.5 rounded-xl border border-warning/20">
+                                             <CheckCircle2 size={14} />
+                                             Acknowledged
+                                          </div>
+                                          <button
+                                             onClick={() => handleResolve(alert.id)}
+                                             className="h-9 px-5 rounded-xl bg-success/10 text-success font-bold text-xs border border-success/20 hover:bg-success/20 transition-all whitespace-nowrap"
+                                          >
+                                             Resolve
+                                          </button>
+                                       </div>
+                                    ) : (
+                                       <button
+                                          onClick={() => handleAcknowledge(alert.id)}
+                                          className="h-10 px-6 rounded-xl bg-primary text-text-primary font-bold text-xs shadow-lg shadow-primary/20 hover:translate-y-[-2px] active:translate-y-0 transition-all whitespace-nowrap"
+                                       >
+                                          Acknowledge
+                                       </button>
+                                    )}
+                                    <button className="p-2 rounded-xl hover:bg-surface text-text-muted transition-colors transition-transform active:scale-90">
+                                       <MoreVertical size={18} />
                                     </button>
-                                 )}
-                                 <button className="p-2 rounded-xl hover:bg-surface text-text-muted transition-colors transition-transform active:scale-90">
-                                    <MoreVertical size={18} />
-                                 </button>
+                                 </div>
                               </div>
-                           </div>
-                        </motion.div>
-                     ))}
-                  </AnimatePresence>
+                           </motion.div>
+                         );
+                       })}
+                    </AnimatePresence>
+                  )}
                </div>
             </Card>
          </BentoGridItem>
@@ -179,7 +284,11 @@ const AlertsPage = () => {
                   
                   <div className="space-y-8 relative z-10">
                      <StatItem label="Response Time" value="4.2m" trend="-12%" isGood />
-                     <StatItem label="Active Crit. Cases" value="2" subValue="Beds 7, 9" />
+                     <StatItem 
+                       label="Active Crit. Cases" 
+                       value={String(criticalCount)} 
+                       subValue={`${alerts.filter(a => a.status !== "resolved").length} total active`} 
+                     />
                   </div>
 
                   <div className="mt-8 pt-8 border-t border-white/20 relative z-10">

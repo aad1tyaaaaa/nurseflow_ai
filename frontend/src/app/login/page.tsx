@@ -2,15 +2,46 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState<"login" | "signup">("signup");
   const [showPassword, setShowPassword] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const router = useRouter();
+  const { login, register } = useAuth();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    setSubmitting(true);
+    try {
+      if (activeTab === "signup") {
+        await register({ email, password, full_name: fullName });
+      } else {
+        await login(email, password);
+      }
+      router.push("/dashboard");
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : activeTab === "signup"
+          ? "Sign up failed"
+          : "Sign in failed";
+      setFormError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <main className="min-h-screen relative flex items-stretch overflow-hidden bg-bg">
@@ -62,13 +93,16 @@ export default function LoginPage() {
                 </p>
               </div>
 
-              <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+              <form className="space-y-5" onSubmit={handleSubmit}>
                 {activeTab === "signup" && (
                   <div>
                     <label className="block text-xs text-text-muted mb-2 ml-4">Full name</label>
                     <input 
                       type="text" 
                       placeholder="Amélie Laurent" 
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      required
                       className="w-full px-6 py-4 rounded-full bg-white/70 backdrop-blur-sm border border-transparent focus:border-border/80 focus:bg-white transition-all outline-none text-text-primary text-sm shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] w-full text-ellipsis placeholder:text-text-muted" 
                     />
                   </div>
@@ -79,6 +113,9 @@ export default function LoginPage() {
                   <input 
                     type="email" 
                     placeholder="amelielaurent7622@gmail.com" 
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
                     className="w-full px-6 py-4 rounded-full bg-white/70 backdrop-blur-sm border border-transparent focus:border-border/80 focus:bg-white transition-all outline-none text-text-primary text-sm shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] w-full text-ellipsis placeholder:text-text-muted" 
                   />
                 </div>
@@ -89,6 +126,10 @@ export default function LoginPage() {
                     <input 
                       type={showPassword ? "text" : "password"} 
                       placeholder="••••••••••••••••" 
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      minLength={8}
                       className="w-full px-6 py-4 pr-12 rounded-full bg-white/70 backdrop-blur-sm border border-transparent focus:border-border/80 focus:bg-white transition-all outline-none text-text-primary text-sm shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] w-full text-ellipsis placeholder:text-text-muted tracking-widest" 
                     />
                     <button 
@@ -102,14 +143,22 @@ export default function LoginPage() {
                 </div>
 
                 <motion.button
-                  type="button"
+                  type="submit"
                   whileHover={{ scale: 1.01 }}
                   whileTap={{ scale: 0.99 }}
-                  onClick={() => router.push("/dashboard")}
-                  className="w-full mt-2 bg-primary hover:bg-primary-deep text-text-primary font-medium py-4 rounded-full shadow-lg shadow-primary/20 transition-all text-sm tracking-wide"
+                  disabled={submitting}
+                  className="w-full mt-2 bg-primary hover:bg-primary-deep text-text-primary font-medium py-4 rounded-full shadow-lg shadow-primary/20 transition-all text-sm tracking-wide disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {activeTab === "signup" ? "Submit" : "Sign in"}
+                  {submitting
+                    ? "Please wait…"
+                    : activeTab === "signup"
+                    ? "Submit"
+                    : "Sign in"}
                 </motion.button>
+
+                {formError && (
+                  <p className="text-center text-xs text-critical mt-2">{formError}</p>
+                )}
               </form>
 
               <div className="grid grid-cols-2 gap-4 mt-8">

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Mic, 
@@ -10,15 +10,62 @@ import {
   RotateCcw, 
   Save, 
   Activity,
-  ArrowRight
+  ArrowRight,
+  Clock
 } from "lucide-react";
 import Card from "@/components/ui/Card";
 import { BentoGrid, BentoGridItem } from "@/components/layout/BentoGrid";
+import { api } from "@/lib/api";
+
+interface VoiceNote {
+  id: string;
+  patient_id: string;
+  transcript: string | null;
+  structured_data: Record<string, unknown> | null;
+  actionable_items: string[] | null;
+  recorded_at: string;
+  duration_seconds: number | null;
+}
+
+function timeAgo(iso: string): string {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
+interface Patient {
+  id: string;
+  first_name: string;
+  last_name: string;
+  bed_number: string | null;
+}
 
 const VoicePage = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [notes, setNotes] = useState<VoiceNote[]>([]);
+  const [loadingNotes, setLoadingNotes] = useState(true);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState("");
+
+  useEffect(() => {
+    api.patients.list()
+      .then((data) => {
+        const list = data as Patient[];
+        setPatients(list);
+        if (list.length > 0) setSelectedPatientId(list[0].id);
+      })
+      .catch(() => {});
+
+    api.voiceNotes.list()
+      .then((data) => setNotes(data as VoiceNote[]))
+      .catch(() => {})
+      .finally(() => setLoadingNotes(false));
+  }, []);
 
   const startRecording = () => {
     setIsRecording(true);
@@ -29,6 +76,28 @@ const VoicePage = () => {
     setIsRecording(false);
     setIsProcessing(true);
     setTimeout(() => setIsProcessing(false), 2000);
+  };
+
+  const handleSave = async () => {
+    if (!transcript || !selectedPatientId) return;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      const form = new FormData();
+      // Send audio as a webm blob (accepted content type)
+      const blob = new Blob([new ArrayBuffer(0)], { type: "audio/webm" });
+      form.append("audio", blob, "voice-note.webm");
+      form.append("patient_id", selectedPatientId);
+      form.append("duration_seconds", "0");
+      await api.voiceNotes.upload(form);
+      const updated = await api.voiceNotes.list();
+      setNotes(updated as VoiceNote[]);
+      setTranscript("");
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save note");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -112,11 +181,32 @@ const VoicePage = () => {
                     </div>
                  </div>
 
-                 <div className="mt-8 flex gap-3 w-full">
-                    <button className="flex-1 h-12 rounded-2xl border border-border bg-white text-text-secondary font-bold text-sm hover:bg-surface transition-all">Assign to Bed 7</button>
-                    <button className="flex-[2] h-12 rounded-2xl bg-primary text-text-primary font-bold text-sm shadow-lg shadow-primary/10 hover:translate-y-[-2px] transition-all flex items-center justify-center gap-2">
-                       <Save size={16} /> Finalize to EMR
-                    </button>
+                 <div className="mt-8 space-y-3 w-full">
+                    {patients.length > 0 && (
+                      <select
+                        value={selectedPatientId}
+                        onChange={(e) => setSelectedPatientId(e.target.value)}
+                        className="w-full h-12 px-4 rounded-2xl border border-border bg-surface font-body text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                      >
+                        {patients.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.first_name} {p.last_name}{p.bed_number ? ` · Bed ${p.bed_number}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {saveError && (
+                      <p className="text-xs text-critical font-body px-2">{saveError}</p>
+                    )}
+                    <div className="flex gap-3">
+                       <button
+                          onClick={handleSave}
+                          disabled={isSaving || !transcript || !selectedPatientId}
+                          className="flex-[2] h-12 rounded-2xl bg-primary text-text-primary font-bold text-sm shadow-lg shadow-primary/10 hover:translate-y-[-2px] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                       >
+                          <Save size={16} /> {isSaving ? "Saving..." : "Finalize to EMR"}
+                       </button>
+                    </div>
                  </div>
               </div>
            </Card>
@@ -148,6 +238,46 @@ const VoicePage = () => {
            </div>
         </BentoGridItem>
       </BentoGrid>
+
+      {/* Recent Voice Notes */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+          <Clock size={20} className="text-primary-deep" />
+          Recent Notes
+        </h2>
+        {loadingNotes ? (
+          <p className="text-text-muted font-body italic">Loading notes...</p>
+        ) : notes.length === 0 ? (
+          <p className="text-text-muted font-body italic">No voice notes recorded yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {notes.map((note) => (
+              <Card key={note.id} className="p-5 bg-white border border-border">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-grow">
+                    <p className="text-sm font-body text-text-primary leading-relaxed italic">
+                      &quot;{note.transcript ?? "No transcript available"}&quot;
+                    </p>
+                    {note.actionable_items && note.actionable_items.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {note.actionable_items.map((item, i) => (
+                          <span key={i} className="px-2 py-1 rounded-lg bg-primary/10 text-primary-deep text-xs font-bold">{item}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-[10px] text-text-muted font-body">{timeAgo(note.recorded_at)}</p>
+                    {note.duration_seconds && (
+                      <p className="text-[10px] text-text-muted font-body">{note.duration_seconds.toFixed(0)}s</p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

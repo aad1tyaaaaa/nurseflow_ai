@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { BentoGrid, BentoGridItem } from "@/components/layout/BentoGrid";
 import Card from "@/components/ui/Card";
 import { 
@@ -14,17 +15,61 @@ import {
   ShieldPlus,
   AlertTriangle
 } from "lucide-react";
+import { api } from "@/lib/api";
 
-const patients = [
-  { id: 1, name: "Robert Miller", bed: "Bed 7", status: "Critical", age: 68, diagnosis: "Acute Resp. Distress" },
-  { id: 2, name: "Sarah Chen", bed: "Bed 3", status: "Warning", age: 42, diagnosis: "Post-Op Recovery" },
-  { id: 3, name: "James Wilson", bed: "Bed 12", status: "Stable", age: 55, diagnosis: "Pneumonia" },
-  { id: 4, name: "Emily Blunt", bed: "Bed 5", status: "Stable", age: 29, diagnosis: "Routine Monitoring" },
-  { id: 5, name: "Michael Scott", bed: "Bed 9", status: "Warning", age: 51, diagnosis: "Chest Pain" },
-  { id: 6, name: "David Goggins", bed: "Bed 2", status: "Safe", age: 45, diagnosis: "Obs. Cardiac" },
-];
+interface Patient {
+  id: string;
+  first_name: string;
+  last_name: string;
+  bed_number: string | null;
+  room_number: string | null;
+  acuity_score: number | null;
+  news2_score: number | null;
+  primary_diagnosis: string | null;
+  date_of_birth: string;
+}
+
+function calcAge(dob: string): number {
+  const birth = new Date(dob);
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
+  return age;
+}
+
+function acuityToStatus(acuity: number | null): { label: string; badge: string } {
+  if (!acuity) return { label: "Stable", badge: "safe" };
+  if (acuity >= 4.0) return { label: "Critical", badge: "critical" };
+  if (acuity >= 3.0) return { label: "Warning", badge: "warning" };
+  if (acuity >= 2.0) return { label: "Stable", badge: "safe" };
+  return { label: "Safe", badge: "safe" };
+}
 
 const PatientsPage = () => {
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    api.patients.list()
+      .then((data) => setPatients(data as Patient[]))
+      .catch((err) => console.error("Failed to load patients", err))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = patients.filter((p) => {
+    if (!searchQuery) return true;
+    const name = `${p.first_name} ${p.last_name}`.toLowerCase();
+    const bed = (p.bed_number ?? "").toLowerCase();
+    return name.includes(searchQuery.toLowerCase()) || bed.includes(searchQuery.toLowerCase());
+  });
+
+  const criticalCount = patients.filter((p) => (p.acuity_score ?? 0) >= 4.0).length;
+  const warningCount = patients.filter((p) => (p.acuity_score ?? 0) >= 3.0 && (p.acuity_score ?? 0) < 4.0).length;
+  const stableCount = patients.filter((p) => (p.acuity_score ?? 0) >= 2.0 && (p.acuity_score ?? 0) < 3.0).length;
+  const safeCount = patients.filter((p) => (p.acuity_score ?? 0) < 2.0).length;
+
   return (
     <div className="space-y-8 pb-12">
       {/* Header */}
@@ -37,8 +82,10 @@ const PatientsPage = () => {
            <div className="relative flex-grow max-w-md">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
               <input 
-                 type="text" 
-                 placeholder="Search by name, bed, or MRN..." 
+                 type="text"
+                 value={searchQuery}
+                 onChange={(e) => setSearchQuery(e.target.value)}
+                 placeholder="Search by name or bed..." 
                  className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface border border-border focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-body text-sm"
               />
            </div>
@@ -56,8 +103,8 @@ const PatientsPage = () => {
              <div className="p-6 border-b border-border flex items-center justify-between bg-surface">
                 <h3 className="font-display font-bold text-text-primary text-xl">Active Patient List</h3>
                 <div className="flex gap-2">
-                   <div className="px-3 py-1 rounded-full bg-critical/10 text-critical text-xs font-bold uppercase tracking-wider ring-1 ring-critical/20">1 ICU</div>
-                   <div className="px-3 py-1 rounded-full bg-warning/10 text-amber-700 text-xs font-bold uppercase tracking-wider ring-1 ring-amber-600/20">3 High Risk</div>
+                   {criticalCount > 0 && <div className="px-3 py-1 rounded-full bg-critical/10 text-critical text-xs font-bold uppercase tracking-wider ring-1 ring-critical/20">{criticalCount} Critical</div>}
+                   {warningCount > 0 && <div className="px-3 py-1 rounded-full bg-warning/10 text-amber-700 text-xs font-bold uppercase tracking-wider ring-1 ring-amber-600/20">{warningCount} High Risk</div>}
                 </div>
              </div>
              
@@ -74,50 +121,55 @@ const PatientsPage = () => {
                       </tr>
                    </thead>
                    <tbody className="divide-y divide-border">
-                      {patients.map((patient) => (
+                      {loading ? (
+                        <tr><td colSpan={6} className="px-6 py-12 text-center text-text-muted font-body">Loading patients...</td></tr>
+                      ) : filtered.length === 0 ? (
+                        <tr><td colSpan={6} className="px-6 py-12 text-center text-text-muted font-body italic">No patients found.</td></tr>
+                      ) : filtered.map((patient) => {
+                        const { label: statusLabel, badge } = acuityToStatus(patient.acuity_score);
+                        const age = calcAge(patient.date_of_birth);
+                        return (
                          <tr key={patient.id} className="hover:bg-surface-raised/30 transition-colors group">
                             <td className="px-6 py-4">
                                <div className="flex items-center gap-3">
                                   <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary-deep font-bold">
-                                     {patient.name.charAt(0)}
+                                     {patient.first_name.charAt(0)}
                                   </div>
                                   <div>
-                                     <p className="text-sm font-bold text-text-primary">{patient.name}</p>
-                                     <p className="text-xs text-text-muted font-body italic">{patient.age} years old</p>
+                                     <p className="text-sm font-bold text-text-primary">{patient.first_name} {patient.last_name}</p>
+                                     <p className="text-xs text-text-muted font-body italic">{age} years old</p>
                                   </div>
                                </div>
                             </td>
                             <td className="px-6 py-4 text-center">
-                               <span className="font-mono text-xs font-bold text-text-secondary bg-surface-raised px-2 py-1 rounded-lg border border-border">{patient.bed}</span>
+                               <span className="font-mono text-xs font-bold text-text-secondary bg-surface-raised px-2 py-1 rounded-lg border border-border">Bed {patient.bed_number}</span>
                             </td>
                             <td className="px-6 py-4">
                                <div className="flex items-center gap-3">
                                   <div className="h-2 w-16 bg-border rounded-full overflow-hidden">
                                      <div className={`h-full rounded-full ${
-                                        patient.status === 'Critical' ? 'bg-critical w-full' : 
-                                        patient.status === 'Warning' ? 'bg-warning w-2/3' : 'bg-success w-1/3'
+                                        badge === 'critical' ? 'bg-critical w-full' : 
+                                        badge === 'warning' ? 'bg-warning w-2/3' : 'bg-success w-1/3'
                                      }`} />
                                   </div>
                                </div>
                             </td>
                             <td className="px-6 py-4">
-                               <p className="text-sm font-body text-text-secondary">{patient.diagnosis}</p>
+                               <p className="text-sm font-body text-text-secondary">{patient.primary_diagnosis ?? "—"}</p>
                             </td>
                             <td className="px-6 py-4">
-                               <span className={`badge badge--${
-                                  patient.status === 'Critical' ? 'critical' : 
-                                  patient.status === 'Warning' ? 'warning' : 'safe'
-                               }`}>
-                                  {patient.status}
-                               </span>
+                               <span className={`badge badge--${badge}`}>{statusLabel}</span>
                             </td>
                             <td className="px-6 py-4 text-right">
-                               <button className="p-2 rounded-xl hover:bg-surface-raised text-text-muted transition-colors">
-                                  <MoreVertical size={18} />
-                               </button>
+                               <Link href={`/patients/${patient.id}`}>
+                                 <button className="p-2 rounded-xl hover:bg-surface-raised text-text-muted transition-colors">
+                                    <MoreVertical size={18} />
+                                 </button>
+                               </Link>
                             </td>
                          </tr>
-                      ))}
+                        );
+                      })}
                    </tbody>
                 </table>
              </div>
@@ -135,10 +187,10 @@ const PatientsPage = () => {
              </div>
              
              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <AcuityMetric icon={<AlertTriangle className="text-critical" />} label="Critical" value="1" color="bg-critical/10" />
-                <AcuityMetric icon={<Activity className="text-amber-600" />} label="Moderate" value="2" color="bg-warning/10" />
-                <AcuityMetric icon={<Thermometer className="text-secondary" />} label="Stable" value="4" color="bg-secondary/10" />
-                <AcuityMetric icon={<ShieldPlus className="text-success" />} label="Safe" value="1" color="bg-success/10" />
+                <AcuityMetric icon={<AlertTriangle className="text-critical" />} label="Critical" value={String(criticalCount)} color="bg-critical/10" />
+                <AcuityMetric icon={<Activity className="text-amber-600" />} label="Moderate" value={String(warningCount)} color="bg-warning/10" />
+                <AcuityMetric icon={<Thermometer className="text-secondary" />} label="Stable" value={String(stableCount)} color="bg-secondary/10" />
+                <AcuityMetric icon={<ShieldPlus className="text-success" />} label="Safe" value={String(safeCount)} color="bg-success/10" />
              </div>
              
              <div className="mt-8 flex items-end gap-2 h-32">
@@ -159,8 +211,8 @@ const PatientsPage = () => {
               </h3>
               <div className="space-y-6">
                  <div>
-                    <p className="text-white/60 text-xs font-bold uppercase tracking-widest mb-1">Average Response Time</p>
-                    <p className="text-3xl font-extrabold tracking-tight">4.2 <span className="text-sm font-normal text-white/70">mins</span></p>
+                    <p className="text-white/60 text-xs font-bold uppercase tracking-widest mb-1">Total Assigned</p>
+                    <p className="text-3xl font-extrabold tracking-tight">{patients.length} <span className="text-sm font-normal text-white/70">patients</span></p>
                  </div>
                  <div>
                     <p className="text-white/60 text-xs font-bold uppercase tracking-widest mb-1">Missed Medications</p>

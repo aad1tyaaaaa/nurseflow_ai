@@ -9,6 +9,7 @@ from app.api.v1.alerts import router as alerts_router
 from app.api.v1.voice_notes import router as voice_notes_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.analytics import router as analytics_router
+from app.api.v1.settings import router as settings_router
 
 api_router = APIRouter()
 
@@ -21,3 +22,4 @@ api_router.include_router(alerts_router)
 api_router.include_router(voice_notes_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(analytics_router)
+api_router.include_router(settings_router)
